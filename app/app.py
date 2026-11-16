@@ -20,6 +20,7 @@ def render(env=None):
         f"DB接続先   : {env.get('DB_HOST', 'localhost')}",
         f"パスワード : {password}",
         f"ビルド     : {env.get('APP_VERSION', 'local')}",
+        "メッセージ  : はじめてのデプロイ",
     ]
     return "\n".join(lines) + "\n"
 
