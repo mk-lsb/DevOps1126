@@ -44,6 +44,17 @@ jobs:
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - name: GitHub Container Registry にログイン
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: 札と焼き込む値を表示する
+        run: |
+          echo "タグ        : $IMAGE:$GITHUB_SHA"
+          echo "APP_VERSION : ${GITHUB_SHA::7}（イメージに焼き込む値。どの環境でも同じ）"
+          {
+            echo "### イメージをビルドしました（1回だけ）"
+            echo '```'
+            echo "タグ        : $IMAGE:${GITHUB_SHA::7}…"
+            echo "APP_VERSION : ${GITHUB_SHA::7}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: ビルド（コミットIDの札を付ける）
         run: |
           docker build \
