@@ -3,6 +3,8 @@
 DevOps全体像理解研修（2026年11月26日）のデモを、自分の GitHub アカウントで再現する手順です。
 研修での講師のデモも、この手順どおりに進めます。所要時間は30〜40分です。
 
+> 画面の写真は講師のリポジトリ（mk-lsb/DevOps1126）で撮ったものです。ユーザー名やコミットIDは、皆さんの画面では違う値になります。
+
 ---
 
 ## 0. ゴール
@@ -69,6 +71,8 @@ DB接続先   : localhost
 ビルド     : local
 ```
 
+![手元で動かしたときの表示](images/03-local.png)
+
 `app/app.py` を書き換えて、別のターミナルで `docker compose restart` を打つと、イメージを作り直さなくても変更が反映されます。
 終わったら `Ctrl+C`（Mac も control キー）で止め、`docker compose down` で片付けます（コンテナは消え、イメージは残ります。次に `docker compose up` するときに速く起動します）。
 
@@ -95,12 +99,22 @@ DB接続先   : localhost
 3. **Required reviewers** にチェックを入れ、自分のユーザー名を追加
 4. **Save protection rules**
 
+![production の設定画面。Required reviewers に自分を追加する](images/05-required-reviewers.png)
+
+保存すると、Environments の一覧に `production` と「1 protection rule」が表示されます。
+
+![Environments の一覧](images/05-environments.png)
+
 > 先にやらないと、本番へのデプロイが承認なしで流れてしまいます。
 > `development` と `staging` は、最初にワークフローが動いたときに自動で作られます。
 
 **（任意）環境ごとの値を入れてみる**
 
 各 Environment の **Environment variables** に `DB_HOST`、**Environment secrets** に `DB_PASSWORD` を追加すると、その値で起動します。パスワードは画面に「設定あり」とだけ出て、値は表示されません。
+
+![production に Secrets（DB_PASSWORD）と Variables（DB_HOST）を入れた状態](images/05-secrets-variables.png)
+
+> 値は必ずダミーにします。Variables の値はログにそのまま表示され、Secrets は自動で `***` に伏せられます。パスワードは Secrets に入れてください。
 
 ---
 
@@ -120,7 +134,10 @@ git push origin main:verification
 ```
 
 - `[skip ci]` を付けると、この push ではワークフローが動きません。まだイメージが無いので、ここで動くと「イメージがありません」で失敗するためです
-- GitHub の画面で、ブランチが `main` `dev` `verification` の3つになっていれば成功です
+- GitHub の画面（ブランチの一覧）で、`main` `dev` `verification` の3つになっていれば成功です。**綴りに注意**（`varification` などになっていると、手順8で何も動きません）
+
+![ブランチの一覧](images/06-branches.png)
+
 - `git commit` で名前とメールを聞かれたら、`git config --global user.name "名前"` と `git config --global user.email "メール"` を先に設定します
 - push でパスワードを聞かれたら、GitHub のパスワードではなく **Personal access token** を入れます（Windows の Git は、ブラウザでのサインイン画面が出ることが多いです）
 
@@ -152,6 +169,10 @@ git push
 - **ビルド** のログ：`-t ghcr.io/.../...:コミットID` のように、コミットIDの札（タグ）が付いている
 - 実行結果のページ下の **Summary**：`環境 : development` と、`ビルド : 7桁のコミットID`
 
+![ビルドのジョブ →「札と焼き込む値を表示する」のステップ](images/07-build-tag.png)
+
+![テスト → ビルド → デプロイが緑になり、Summary に development の結果が出る](images/07-dev-summary.png)
+
 ---
 
 ## 8. 検証へ進める（ビルドしない）
@@ -167,6 +188,8 @@ Actions で **テスト → デプロイ** が動きます。**ビルドは灰�
 - Summary：`環境 : staging`、`DB接続先 : staging-db`
 - `ビルド` のコミットIDが、手順7と**同じ**
 
+![ビルドが灰色（スキップ）。Summary は staging](images/08-staging-skipped.png)
+
 ---
 
 ## 9. 本番へ進める（承認してから出す）
@@ -179,19 +202,32 @@ git push origin origin/verification:main
 
 Actions で **デプロイ** が **Waiting** で止まります。
 
+![デプロイが Waiting で止まり、Review deployments のボタンが出る](images/09-waiting.png)
+
 1. 実行結果のページで **Review deployments**
-2. `production` にチェック → **Approve and deploy**
+2. `production` にチェック
+3. **Leave a comment** に、何を確かめて承認したかを1行書く（例：`検証環境で動作確認済み。ビルド 4aa0b73 を本番へ。`）。承認の記録として残ります
+4. **Approve and deploy**
+
+![承認の画面](images/09-approve.png)
 
 **ここで見るところ**
 
 - 承認するまで本番に出ない
 - Summary：`環境 : production`、`ビルド` は手順7・8と**同じ**
+- 手順5で本番に値を入れた場合は、`DB接続先` がその値、`パスワード : 設定あり` になる
+
+![production の Summary。本番に入れた値だけが効いている](images/09-production-summary.png)
 
 ---
 
 ## 10. 3つの結果を並べる
 
 Actions の一覧から3つの実行を開き、Summary を見比べます。手順0の表と同じになっていれば完了です。
+
+Actions の一覧では、同じコミットIDが `dev` → `verification` → `main` の順に並びます。下の写真は2回繰り返したところで、変更するたびに新しいイメージが1つでき、それが3つの環境を順に進んでいくのが分かります。
+
+![Actions の一覧（2回分）](images/10-runs.png)
 
 もう一度試すときは、手順7〜9を繰り返します（dev で変更 → `dev:verification` → `origin/verification:main`）。
 
