@@ -1,0 +1,15 @@
+# 手元のPCで動かすための設定（個別ブランチでの開発用）
+#   docker compose up --build
+#   ブラウザで http://localhost:8000
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: local
+      DB_HOST: localhost
+    volumes:
+      # 手元のソースを直接つなぐ（バインドマウント）。
+      # app.py を書き換えたら docker compose restart で反映される
+      - ./app:/app

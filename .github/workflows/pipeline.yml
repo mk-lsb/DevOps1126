@@ -1,0 +1,104 @@
+# DevOps研修 デモ用パイプライン
+#
+#   dev          に push → テスト → ビルド（1回だけ）→ 開発環境
+#   verification に push → テスト →（ビルドしない）→ 検証環境
+#   main         に push → テスト →（ビルドしない）→ 本番環境（承認待ち）
+#
+# 「一度ビルドしたイメージを運ぶ」流派のデモです。
+# dev で作ったコミットをそのまま進めるため、昇格は fast-forward で行います：
+#   git push origin dev:verification
+#   git push origin origin/verification:main
+# 手順の詳細は docs/handson.md
+#
+# ※「デプロイ」はこのデモでは本物のサーバーではなく、
+#   GitHub のランナー上でコンテナを起動して中身を確かめるところまでです。
+
+name: pipeline
+
+on:
+  push:
+    branches: [dev, verification, main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    name: テスト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: 単体テスト
+        run: python3 -m unittest discover -s tests -v
+
+  build:
+    name: ビルド（devのときだけ）
+    if: github.event_name == 'push' && github.ref_name == 'dev'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: イメージ名を決める（GHCRは小文字のみ）
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: GitHub Container Registry にログイン
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: ビルド（コミットIDの札を付ける）
+        run: |
+          docker build \
+            --build-arg APP_VERSION="${GITHUB_SHA::7}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            -t "$IMAGE:$GITHUB_SHA" .
+      - name: レジストリへ送る
+        run: docker push "$IMAGE:$GITHUB_SHA"
+
+  deploy:
+    name: デプロイ
+    needs: [test, build]
+    # build が「スキップ」でも動かす（verification と main ではビルドしないため）
+    if: ${{ !failure() && !cancelled() && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    # ブランチで環境を選ぶ。production には Settings → Environments で承認者を設定しておく
+    environment: ${{ github.ref_name == 'main' && 'production' || (github.ref_name == 'verification' && 'staging' || 'development') }}
+    env:
+      APP_ENV: ${{ github.ref_name == 'main' && 'production' || (github.ref_name == 'verification' && 'staging' || 'development') }}
+      # 環境ごとの値は Environments の Variables / Secrets から。未設定なら下の既定値
+      DB_HOST_SETTING: ${{ vars.DB_HOST }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+    steps:
+      - name: イメージ名を決める
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: GitHub Container Registry にログイン
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: イメージを取ってくる（作り直さない）
+        run: |
+          if ! docker pull "$IMAGE:$GITHUB_SHA"; then
+            echo "::error::このコミット（${GITHUB_SHA::7}）のイメージがありません。dev でビルドしたコミットを、git push origin dev:verification のように fast-forward で進めてください。"
+            exit 1
+          fi
+      - name: 起動する（環境変数だけ変える）
+        run: |
+          DB_HOST="${DB_HOST_SETTING:-${APP_ENV}-db}"
+          docker run -d --name app -p 8000:8000 \
+            -e APP_ENV="$APP_ENV" \
+            -e DB_HOST="$DB_HOST" \
+            -e DB_PASSWORD \
+            "$IMAGE:$GITHUB_SHA"
+      - name: 動作確認
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            curl -fs http://localhost:8000/health && break
+            sleep 1
+          done
+          curl -fs http://localhost:8000/ | tee result.txt
+          {
+            echo "### ${APP_ENV} にデプロイしました"
+            echo '```'
+            cat result.txt
+            echo "イメージ   : $IMAGE:${GITHUB_SHA::7}…"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 後片付け
+        if: always()
+        run: docker rm -f app || true
