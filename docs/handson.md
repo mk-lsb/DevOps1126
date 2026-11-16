@@ -9,14 +9,16 @@ DevOps全体像理解研修（2026年11月26日）のデモを、自分の GitHu
 
 最後に、GitHub Actions の画面で次の3つの結果が並びます。
 
-| ブランチ | 環境 | DB接続先 | ビルド |
-|---|---|---|---|
-| `dev` | development | development-db | 1a2b3c4 |
-| `verification` | staging | staging-db | **1a2b3c4（同じ）** |
-| `main` | production | production-db | **1a2b3c4（同じ）** |
+| ブランチ | 環境 | DB接続先 | パスワード | ビルド |
+|---|---|---|---|---|
+| `dev` | development | development-db | 設定なし | 1a2b3c4（例） |
+| `verification` | staging | staging-db | 設定なし | **1a2b3c4（同じ）** |
+| `main` | production | production-db ※ | 設定なし ※ | **1a2b3c4（同じ）** |
 
-- **ビルド** はイメージを作るときに焼き込んだ値 → どの環境でも同じ
-- **環境・DB接続先** は起動するときに渡した値 → 環境ごとに違う
+- **ビルド** はイメージを作るときに焼き込んだ値 → どの環境でも同じ。実際には自分のコミットIDの先頭7桁が出ます
+- **環境・DB接続先・パスワード** は起動するときに渡した値 → 環境ごとに違う
+- ※ 手順5の（任意）で production に `DB_HOST` と `DB_PASSWORD` を入れた場合は、入れた値（例：`prod-db.internal`）と「設定あり」になります。**本番の設定画面に入れた値だけが本番で効く**ことが分かります
+- Summary にはこのほか、手順7で足した「メッセージ」と、使ったイメージの名前も表示されます
 
 つまり「ブランチはイメージの出どころ。環境の違いは環境変数」を、自分の目で確かめます。
 
@@ -68,7 +70,9 @@ DB接続先   : localhost
 ```
 
 `app/app.py` を書き換えて、別のターミナルで `docker compose restart` を打つと、イメージを作り直さなくても変更が反映されます。
-終わったら `Ctrl+C`（Mac も control キー）で止め、`docker compose down` で片付けます。
+終わったら `Ctrl+C`（Mac も control キー）で止め、`docker compose down` で片付けます（コンテナは消え、イメージは残ります。次に `docker compose up` するときに速く起動します）。
+
+> **試しに書き換えた `app/app.py` は、元に戻してから手順6へ進んでください。** 書き換えたまま最初の push をすると、その変更も一緒に入ります。テストが通らない形に変えていると、手順7で失敗します。
 
 ---
 
@@ -199,6 +203,8 @@ Actions の一覧から3つの実行を開き、Summary を見比べます。手
 |---|---|
 | デプロイが「このコミットのイメージがありません」で止まる | dev でビルドしたものと違うコミットを進めた。PR でマージした・verification や main に直接コミットした場合に起きます。dev に変更を push してビルドしてから、手順8・9のコマンドで進め直す |
 | push しても Actions が動かない | 最後のコミットに `[skip ci]` が付いている。変更を加えてもう一度コミットする |
+| push すると「Select an account」で自分のアカウントが出ない | このPCのGitが別のアカウントだけを覚えている。**Add a new account** で自分のアカウントでサインインする。毎回選択画面が出るのを避けるには `git remote set-url origin https://<ユーザー名>@github.com/<ユーザー名>/<リポジトリ名>.git` |
+| verification や main に push しても Actions が動かない | ブランチ名の綴り違い（例：`varification`）。ワークフローは `dev` `verification` `main` の3つだけに反応する。`git push origin --delete 間違えた名前` で消して、正しい名前で push し直す |
 | 承認待ちにならず本番に出た | 手順5の設定が無い、またはリポジトリが Private |
 | `git push origin verification:main` で `src refspec ... does not match` | 手元に verification ブランチが無いため。手順9のとおり `origin/verification:main` と書く |
 | ビルドで `denied` などの権限エラー | リポジトリの Settings → Actions → General で、Actions が許可されているか確かめる |
